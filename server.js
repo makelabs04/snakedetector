@@ -12,7 +12,7 @@ const io = new Server(server);
 
 // ─── Gemini FREE API Setup ────────────────────────────────────────────────────
 // Get your FREE key at: https://aistudio.google.com/app/apikey
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyBSo9Xd_fgieJjbXtBQlyDY_fxF_U2YwNg';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyCMiwyvaiKflf7LOatW9XbPg3SMRVTFmVI';
 console.log('Using API key:', GEMINI_API_KEY.substring(0, 10) + '...');
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
