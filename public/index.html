@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SnakeGuard – Bite Detection System (Gemini FREE)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --accent: #00adee;
+      --accent-dark: #0090cc;
+      --accent-glow: rgba(0, 173, 238, 0.2);
+      --bg: #ffffff;
+      --section-bg: #f8f9fa;
+      --danger: #e53e3e;
+      --danger-glow: rgba(229, 62, 62, 0.15);
+      --success: #38a169;
+      --success-glow: rgba(56, 161, 105, 0.15);
+      --text: #1a202c;
+      --text-muted: #718096;
+      --border: #e2e8f0;
+      --radius: 16px;
+      --shadow-hover: 0 8px 32px rgba(0,0,0,0.12);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header {
+      background: var(--bg); border-bottom: 1.5px solid var(--border);
+      padding: 0 40px; display: flex; align-items: center; justify-content: space-between;
+      height: 72px; position: sticky; top: 0; z-index: 100;
+    }
+    .logo { display: flex; align-items: center; gap: 12px; }
+    .logo-icon { width: 40px; height: 40px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .logo-text { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 22px; color: var(--text); }
+    .logo-text span { color: var(--accent); }
+    .header-status { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--section-bg); border-radius: 100px; font-size: 13px; font-weight: 500; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e0; transition: background 0.3s; }
+    .status-dot.connected { background: var(--success); animation: pulse-green 2s infinite; }
+    .status-dot.alert { background: var(--danger); animation: pulse-red 0.8s infinite; }
+    @keyframes pulse-green { 0%,100% { box-shadow: 0 0 0 0 rgba(56,161,105,0.4); } 50% { box-shadow: 0 0 0 6px rgba(56,161,105,0); } }
+    @keyframes pulse-red { 0%,100% { box-shadow: 0 0 0 0 rgba(229,62,62,0.5); } 50% { box-shadow: 0 0 0 8px rgba(229,62,62,0); } }
+
+    main { max-width: 1100px; margin: 0 auto; padding: 40px 24px 60px; }
+
+    .alert-banner { border-radius: var(--radius); padding: 20px 28px; margin-bottom: 32px; align-items: center; gap: 16px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 18px; transition: all 0.4s; display: none; }
+    .alert-banner.show { display: flex; }
+    .alert-banner.danger { background: var(--danger-glow); border: 2px solid var(--danger); color: var(--danger); animation: flash-border 1s infinite; }
+    .alert-banner.safe { background: var(--success-glow); border: 2px solid var(--success); color: var(--success); }
+    @keyframes flash-border { 0%,100% { border-color: var(--danger); } 50% { border-color: transparent; } }
+    .banner-icon { font-size: 28px; }
+    .banner-sub { font-family: 'DM Sans', sans-serif; font-weight: 400; font-size: 14px; opacity: 0.8; display: block; margin-top: 2px; }
+
+    .metrics-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 24px; }
+    .metric { background: var(--section-bg); border-radius: 12px; padding: 20px; text-align: center; border: 1.5px solid var(--border); }
+    .metric-value { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 28px; color: var(--accent); margin-bottom: 4px; }
+    .metric-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+    /* TABS */
+    .tab-bar { display: flex; gap: 4px; background: var(--section-bg); border-radius: 12px; padding: 5px; margin-bottom: 24px; border: 1.5px solid var(--border); }
+    .tab-btn { flex: 1; padding: 10px 16px; border: none; background: transparent; border-radius: 8px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; color: var(--text-muted); cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .tab-btn.active { background: var(--bg); color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } header { padding: 0 16px; } }
+
+    .card { background: var(--section-bg); border-radius: var(--radius); padding: 28px; border: 1.5px solid var(--border); transition: box-shadow 0.2s; }
+    .card:hover { box-shadow: var(--shadow-hover); }
+    .card-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+
+    /* UPLOAD */
+    .upload-zone { border: 2px dashed var(--accent); border-radius: 12px; padding: 40px 20px; text-align: center; cursor: pointer; transition: all 0.25s; background: rgba(0,173,238,0.03); position: relative; }
+    .upload-zone:hover, .upload-zone.dragover { background: var(--accent-glow); border-color: var(--accent-dark); transform: translateY(-2px); }
+    .upload-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .upload-icon { font-size: 42px; margin-bottom: 12px; }
+    .upload-text { font-family: 'Syne', sans-serif; font-weight: 600; font-size: 16px; color: var(--accent); margin-bottom: 4px; }
+    .upload-sub { font-size: 13px; color: var(--text-muted); }
+    .preview-img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 10px; margin-top: 16px; display: none; border: 2px solid var(--border); }
+
+    /* CAMERA */
+    .camera-container { position: relative; background: #0d1117; border-radius: 12px; overflow: hidden; border: 2px solid var(--border); }
+    #cameraFeed { width: 100%; display: block; border-radius: 10px; min-height: 220px; background: #0d1117; }
+    #cameraCanvas { display: none; }
+    .camera-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; color: #6b7280; font-size: 14px; pointer-events: none; }
+    .camera-overlay span { font-size: 36px; }
+    .scan-line { position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: scan 2s linear infinite; display: none; }
+    .scan-line.active { display: block; }
+    @keyframes scan { 0% { top: 0; } 100% { top: 100%; } }
+    .cam-badge { position: absolute; top: 10px; left: 10px; background: var(--danger); color: white; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 100px; display: none; align-items: center; gap: 5px; animation: pulse-badge 1s infinite; }
+    .cam-badge.show { display: flex; }
+    @keyframes pulse-badge { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .cam-status-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--text-muted); }
+    .cam-dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e0; }
+    .cam-dot.live { background: var(--danger); animation: pulse-red 1s infinite; }
+    .cam-dot.ready { background: var(--success); }
+    .cam-interval-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+    .cam-interval-row label { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
+    .cam-interval-row input[type=range] { flex: 1; accent-color: var(--accent); }
+    .cam-interval-row span { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; color: var(--accent); min-width: 30px; }
+
+    /* BUTTONS */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 24px; border-radius: 10px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 15px; cursor: pointer; border: none; transition: all 0.2s; }
+    .btn-primary { background: var(--accent); color: white; width: 100%; margin-top: 16px; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-dark); transform: translateY(-1px); box-shadow: 0 4px 16px var(--accent-glow); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-outline { background: transparent; color: var(--accent); border: 2px solid var(--accent); padding: 10px 20px; font-size: 14px; }
+    .btn-outline:hover { background: var(--accent-glow); }
+    .btn-danger { background: var(--danger); color: white; padding: 10px 20px; font-size: 14px; }
+    .btn-danger:hover { opacity: 0.85; }
+    .btn-success { background: var(--success); color: white; width: 100%; margin-top: 16px; }
+    .btn-success:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+    .btn-success:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-stop { background: var(--danger); color: white; width: 100%; margin-top: 10px; }
+    .btn-stop:hover { opacity: 0.88; }
+
+    .controls-row { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+
+    /* RESULT */
+    .result-box { background: var(--bg); border-radius: 12px; padding: 20px; border: 1.5px solid var(--border); min-height: 160px; display: flex; flex-direction: column; justify-content: center; }
+    .result-empty { text-align: center; color: var(--text-muted); font-size: 14px; }
+    .result-empty span { font-size: 32px; display: block; margin-bottom: 8px; }
+    .result-status { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .result-badge { padding: 6px 16px; border-radius: 100px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .badge-danger { background: var(--danger-glow); color: var(--danger); }
+    .badge-safe { background: var(--success-glow); color: var(--success); }
+    .result-confidence { font-size: 13px; color: var(--text-muted); }
+    .confidence-bar { height: 6px; background: var(--border); border-radius: 100px; margin: 8px 0 16px; overflow: hidden; }
+    .confidence-fill { height: 100%; border-radius: 100px; transition: width 0.8s cubic-bezier(0.4,0,0.2,1); }
+    .fill-danger { background: var(--danger); }
+    .fill-safe { background: var(--success); }
+    .result-details { font-size: 14px; color: var(--text); line-height: 1.6; margin-bottom: 12px; }
+    .result-recommendation { font-size: 13px; padding: 10px 14px; border-radius: 8px; background: var(--section-bg); color: var(--text-muted); border-left: 3px solid var(--accent); }
+
+    /* LED */
+    .led-display { display: flex; gap: 20px; justify-content: center; margin: 20px 0; }
+    .led { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .led-bulb { width: 52px; height: 52px; border-radius: 50%; border: 3px solid; transition: all 0.3s; position: relative; }
+    .led-bulb::after { content: ''; position: absolute; top: 8px; left: 10px; width: 14px; height: 8px; background: rgba(255,255,255,0.5); border-radius: 50%; transform: rotate(-30deg); }
+    .led-red .led-bulb { background: #fbd3d3; border-color: #fc8181; }
+    .led-red.active .led-bulb { background: var(--danger); border-color: #c53030; box-shadow: 0 0 24px rgba(229,62,62,0.7), 0 0 48px rgba(229,62,62,0.3); animation: blink-led 0.6s ease-in-out infinite; }
+    .led-green .led-bulb { background: #c6f6d5; border-color: #68d391; }
+    .led-green.active .led-bulb { background: var(--success); border-color: #276749; box-shadow: 0 0 24px rgba(56,161,105,0.7), 0 0 48px rgba(56,161,105,0.3); }
+    @keyframes blink-led { 0%,100% { opacity: 1; } 50% { opacity: 0.3; box-shadow: none; } }
+    .led-label { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+    .buzzer-icon { font-size: 28px; text-align: center; padding: 14px; border-radius: 50%; background: var(--section-bg); border: 2px solid var(--border); transition: all 0.3s; }
+    .buzzer-icon.active { background: rgba(229,62,62,0.1); border-color: var(--danger); animation: shake 0.4s ease-in-out infinite; }
+    @keyframes shake { 0%,100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+
+    /* LOG */
+    .log-area { background: #1a202c; border-radius: 12px; padding: 16px; font-family: 'Courier New', monospace; font-size: 12px; color: #a0aec0; max-height: 160px; overflow-y: auto; line-height: 1.6; }
+    .log-entry { margin-bottom: 2px; }
+    .log-time { color: #4a5568; }
+    .log-info { color: var(--accent); }
+    .log-warn { color: #f6ad55; }
+    .log-error { color: #fc8181; }
+    .log-success { color: #68d391; }
+
+    .spinner { width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .code-block { background: #1a202c; border-radius: 8px; padding: 14px 16px; font-family: 'Courier New', monospace; font-size: 12px; color: #a0aec0; overflow-x: auto; }
+    .code-block .key { color: #f6ad55; }
+    .code-block .val { color: #68d391; }
+
+    .toast { position: fixed; bottom: 24px; right: 24px; background: var(--text); color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; transform: translateY(80px); opacity: 0; transition: all 0.3s; z-index: 999; }
+    .toast.show { transform: translateY(0); opacity: 1; }
+
+    .section-divider { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 20px; color: var(--text); margin: 32px 0 16px; padding-bottom: 12px; border-bottom: 2px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🐍</div>
+    <div class="logo-text">Snake<span>Guard</span></div>
+  </div>
+  <div class="header-status">
+    <div class="status-dot" id="systemDot"></div>
+    <span id="systemStatusText">System Idle</span>
+  </div>
+</header>
+
+<main>
+  <!-- Alert Banner -->
+  <div class="alert-banner" id="alertBanner">
+    <div class="banner-icon" id="bannerIcon">⚠️</div>
+    <div>
+      <div id="bannerTitle">No Detection Active</div>
+      <span class="banner-sub" id="bannerSub"></span>
+    </div>
+  </div>
+
+  <!-- Metrics -->
+  <div class="metrics-row">
+    <div class="metric"><div class="metric-value" id="totalScans">0</div><div class="metric-label">Total Scans</div></div>
+    <div class="metric"><div class="metric-value" id="detectedCount" style="color:#e53e3e">0</div><div class="metric-label">Bites Detected</div></div>
+    <div class="metric"><div class="metric-value" id="lastConfidence">—</div><div class="metric-label">Last Confidence</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('upload', this)">📁 Upload Image</button>
+    <button class="tab-btn" onclick="switchTab('camera', this)">📹 Live Camera</button>
+  </div>
+
+  <!-- TAB: Upload -->
+  <div class="tab-panel active" id="tab-upload">
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">📷 Image Analysis</div>
+        <div class="upload-zone" id="uploadZone">
+          <input type="file" id="fileInput" accept="image/*">
+          <div class="upload-icon">🔍</div>
+          <div class="upload-text">Drop image or click to upload</div>
+          <div class="upload-sub">PNG, JPG, JPEG · Max 10MB</div>
+        </div>
+        <img id="previewImg" class="preview-img" alt="Preview">
+        <button class="btn btn-primary" id="analyzeBtn" disabled>
+          <span id="btnText">🔍 Analyze with Gemini AI</span>
+        </button>
+        <div class="controls-row">
+          <button class="btn btn-outline" onclick="clearImage()">Clear</button>
+          <button class="btn btn-danger" onclick="resetSystem()">Reset System</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🧬 Detection Result</div>
+        <div class="result-box">
+          <div class="result-empty" id="emptyState"><span>🔬</span>Upload an image to begin analysis</div>
+          <div id="resultContent" style="display:none">
+            <div class="result-status">
+              <div class="result-badge" id="resultBadge">—</div>
+              <div class="result-confidence" id="resultConf">Confidence: —</div>
+            </div>
+            <div class="confidence-bar"><div class="confidence-fill" id="confFill" style="width:0%"></div></div>
+            <div class="result-details" id="resultDetails"></div>
+            <div class="result-recommendation" id="resultRec"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: Live Camera -->
+  <div class="tab-panel" id="tab-camera">
+    <div class="grid">
+      <!-- Camera Feed -->
+      <div class="card">
+        <div class="card-title">📹 Live Camera Feed</div>
+        <div class="camera-container">
+          <video id="cameraFeed" autoplay muted playsinline></video>
+          <canvas id="cameraCanvas"></canvas>
+          <div class="scan-line" id="scanLine"></div>
+          <div class="cam-badge" id="camBadge">● LIVE SCANNING</div>
+          <div class="camera-overlay" id="cameraOverlay">
+            <span>📷</span>
+            Camera not started
+          </div>
+        </div>
+
+        <div class="cam-status-row">
+          <div class="cam-dot" id="camDot"></div>
+          <span id="camStatusText">Camera off — click Start to begin</span>
+        </div>
+
+        <div class="cam-interval-row">
+          <label>Scan every:</label>
+          <input type="range" id="intervalSlider" min="3" max="30" value="5" oninput="updateInterval(this.value)">
+          <span id="intervalLabel">5s</span>
+        </div>
+
+        <button class="btn btn-success" id="startCamBtn" onclick="startCamera()">▶ Start Camera &amp; Auto-Scan</button>
+        <button class="btn btn-stop" id="stopCamBtn" onclick="stopCamera()" style="display:none">⏹ Stop Camera</button>
+
+        <div class="controls-row" style="margin-top:12px">
+          <button class="btn btn-outline" onclick="snapAndAnalyze()" id="snapBtn" disabled style="flex:1">📸 Snap &amp; Analyze Now</button>
+          <button class="btn btn-danger" onclick="resetSystem()" style="flex:1">Reset</button>
+        </div>
+      </div>
+
+      <!-- Live Result -->
+      <div class="card">
+        <div class="card-title">🧬 Live Detection Result</div>
+        <div class="result-box">
+          <div class="result-empty" id="camEmptyState"><span>📹</span>Start camera to begin live detection</div>
+          <div id="camResultContent" style="display:none">
+            <div class="result-status">
+              <div class="result-badge" id="camResultBadge">—</div>
+              <div class="result-confidence" id="camResultConf">Confidence: —</div>
+            </div>
+            <div class="confidence-bar"><div class="confidence-fill" id="camConfFill" style="width:0%"></div></div>
+            <div class="result-details" id="camResultDetails"></div>
+            <div class="result-recommendation" id="camResultRec"></div>
+            <div style="margin-top:12px;font-size:12px;color:var(--text-muted)" id="camLastScan">Last scan: —</div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px">
+          <div class="card-title" style="font-size:12px;margin-bottom:10px">📸 Last Captured Frame</div>
+          <img id="capturedFrame" style="width:100%;border-radius:10px;border:2px solid var(--border);display:none" alt="Captured Frame">
+          <div style="font-size:13px;color:var(--text-muted);text-align:center;padding:20px 0" id="noFrameText">No frame captured yet</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LED + Log (always visible) -->
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">💡 ESP32 LED &amp; Buzzer Status</div>
+      <div class="led-display">
+        <div class="led led-red" id="ledRed"><div class="led-bulb"></div><div class="led-label">Red LED</div></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div class="buzzer-icon" id="buzzerIcon">🔔</div>
+          <div class="led-label">Buzzer</div>
+        </div>
+        <div class="led led-green" id="ledGreen"><div class="led-bulb"></div><div class="led-label">Green LED</div></div>
+      </div>
+      <div style="text-align:center;font-size:13px;color:var(--text-muted);margin-top:8px" id="ledStatus">Awaiting detection...</div>
+      <div style="margin-top:20px">
+        <div class="card-title" style="font-size:12px;margin-bottom:10px">ESP32 API Endpoints</div>
+        <div class="code-block">
+          <span class="key">GET </span><span class="val">/api/status</span> — Poll detection state<br>
+          <span class="key">POST</span> <span class="val">/api/detect-camera</span> — Send camera frame<br>
+          <span class="key">POST</span> <span class="val">/api/detect</span> — Upload image file<br>
+          <span class="key">POST</span> <span class="val">/api/reset</span> — Reset alert state
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📋 Activity Log</div>
+      <div class="log-area" id="logArea">
+        <div class="log-entry"><span class="log-time">[boot] </span><span class="log-info">SnakeGuard v2 — Gemini FREE API ready</span></div>
+        <div class="log-entry"><span class="log-time">[boot] </span><span class="log-info">Model: gemini-1.5-flash | Connecting socket...</span></div>
+      </div>
+      <button class="btn btn-outline" style="margin-top:12px;font-size:13px;padding:8px 16px" onclick="clearLog()">Clear Log</button>
+    </div>
+  </div>
+
+  <!-- ESP32 Guide -->
+  <div class="section-divider">⚙️ ESP32 Setup Guide</div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">🔌 Wiring</div>
+      <div class="code-block" style="line-height:2">
+        <span class="key">GPIO 2  </span>→ <span class="val">Red LED (+ 220Ω resistor)</span><br>
+        <span class="key">GPIO 4  </span>→ <span class="val">Green LED (+ 220Ω resistor)</span><br>
+        <span class="key">GPIO 5  </span>→ <span class="val">Buzzer (active buzzer)</span><br>
+        <span class="key">GND     </span>→ <span class="val">All component GND pins</span><br>
+        <span class="key">3.3V    </span>→ <span class="val">Power rail</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📡 ESP32 Config</div>
+      <div class="code-block" style="line-height:2">
+        <span class="key">Server IP  </span>: <span class="val">192.168.x.x (your PC IP)</span><br>
+        <span class="key">Port       </span>: <span class="val">3000</span><br>
+        <span class="key">Poll URL   </span>: <span class="val">/api/status</span><br>
+        <span class="key">Poll Rate  </span>: <span class="val">Every 2 seconds</span><br>
+        <span class="key">Alert PIN  </span>: <span class="val">GPIO 2 (RED) + GPIO 5 (BUZ)</span>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const socket = io();
+  let totalScans = 0, detectedCount = 0;
+  let selectedFile = null;
+
+  // Camera state
+  let cameraStream = null;
+  let scanInterval = null;
+  let scanIntervalSeconds = 5;
+  let isCameraRunning = false;
+  let isAnalyzingFrame = false;
+
+  // ── Socket ──────────────────────────────────────────────────────
+  socket.on('connect', () => { log('Socket connected: ' + socket.id, 'info'); updateSystemStatus('idle'); });
+  socket.on('disconnect', () => log('Socket disconnected', 'warn'));
+  socket.on('detection-update', (data) => {
+    log(`Detection: ${data.snakeBite ? '⚠️ BITE DETECTED' : '✅ No bite'} (${data.confidence}%)`, data.snakeBite ? 'error' : 'success');
+    applyDetectionResult(data);
+  });
+  socket.on('esp32-status', (data) => log('ESP32 ' + (data.connected ? 'connected' : 'disconnected'), data.connected ? 'success' : 'warn'));
+
+  // ── Tabs ────────────────────────────────────────────────────────
+  function switchTab(tab, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  // ── File Upload ─────────────────────────────────────────────────
+  const fileInput = document.getElementById('fileInput');
+  const previewImg = document.getElementById('previewImg');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const uploadZone = document.getElementById('uploadZone');
+
+  fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFileSelect(e.target.files[0]); });
+  uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault(); uploadZone.classList.remove('dragover');
+    const f = e.dataTransfer.files[0];
+    if (f && f.type.startsWith('image/')) handleFileSelect(f);
+  });
+
+  function handleFileSelect(file) {
+    selectedFile = file;
+    const reader = new FileReader();
+    reader.onload = e => { previewImg.src = e.target.result; previewImg.style.display = 'block'; };
+    reader.readAsDataURL(file);
+    analyzeBtn.disabled = false;
+    log(`Image: ${file.name} (${(file.size/1024).toFixed(1)} KB)`, 'info');
+  }
+
+  analyzeBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+    const btnText = document.getElementById('btnText');
+    analyzeBtn.disabled = true;
+    btnText.innerHTML = '<div class="spinner"></div>Analyzing...';
+    updateSystemStatus('analyzing');
+    log('Sending to Gemini Vision...', 'info');
+    try {
+      const fd = new FormData();
+      fd.append('image', selectedFile);
+      const res = await fetch('/api/detect', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error('Server ' + res.status);
+      const result = await res.json();
+      totalScans++;
+      document.getElementById('totalScans').textContent = totalScans;
+      if (result.snakeBite) { detectedCount++; document.getElementById('detectedCount').textContent = detectedCount; }
+      document.getElementById('lastConfidence').textContent = result.confidence + '%';
+      showResultPanel(result, false);
+      applyDetectionResult(result);
+      log(`Done — ${result.snakeBite ? '⚠️ BITE DETECTED' : '✅ Safe'} (${result.confidence}%)`, result.snakeBite ? 'error' : 'success');
+      showToast(result.snakeBite ? '⚠️ Snake bite detected!' : '✅ No snake bite detected');
+    } catch (err) {
+      log('Error: ' + err.message, 'error');
+      showToast('❌ Analysis failed.');
+      updateSystemStatus('idle');
+    }
+    analyzeBtn.disabled = false;
+    btnText.textContent = '🔍 Analyze with Gemini AI';
+  });
+
+  // ── Live Camera ──────────────────────────────────────────────────
+  async function startCamera() {
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      const video = document.getElementById('cameraFeed');
+      video.srcObject = cameraStream;
+      await video.play();
+
+      isCameraRunning = true;
+      document.getElementById('cameraOverlay').style.display = 'none';
+      document.getElementById('startCamBtn').style.display = 'none';
+      document.getElementById('stopCamBtn').style.display = 'block';
+      document.getElementById('snapBtn').disabled = false;
+      document.getElementById('camBadge').classList.add('show');
+      document.getElementById('scanLine').classList.add('active');
+      document.getElementById('camDot').className = 'cam-dot live';
+      document.getElementById('camStatusText').textContent = `Live — auto-scanning every ${scanIntervalSeconds}s`;
+
+      log(`Camera ON — auto-scan every ${scanIntervalSeconds}s`, 'success');
+      startAutoScan();
+      // First immediate scan
+      setTimeout(snapAndAnalyze, 1500);
+
+    } catch (err) {
+      log('Camera error: ' + err.message, 'error');
+      showToast('❌ Camera access denied. Allow camera in browser.');
+    }
+  }
+
+  function stopCamera() {
+    if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+    clearInterval(scanInterval); scanInterval = null;
+    isCameraRunning = false;
+    const video = document.getElementById('cameraFeed');
+    video.srcObject = null;
+    document.getElementById('cameraOverlay').style.display = 'flex';
+    document.getElementById('startCamBtn').style.display = 'block';
+    document.getElementById('stopCamBtn').style.display = 'none';
+    document.getElementById('snapBtn').disabled = true;
+    document.getElementById('camBadge').classList.remove('show');
+    document.getElementById('scanLine').classList.remove('active');
+    document.getElementById('camDot').className = 'cam-dot';
+    document.getElementById('camStatusText').textContent = 'Camera off';
+    log('Camera stopped', 'warn');
+  }
+
+  function startAutoScan() {
+    clearInterval(scanInterval);
+    scanInterval = setInterval(() => { if (!isAnalyzingFrame) snapAndAnalyze(); }, scanIntervalSeconds * 1000);
+  }
+
+  function updateInterval(val) {
+    scanIntervalSeconds = parseInt(val);
+    document.getElementById('intervalLabel').textContent = val + 's';
+    if (isCameraRunning) {
+      document.getElementById('camStatusText').textContent = `Live — auto-scanning every ${scanIntervalSeconds}s`;
+      startAutoScan();
+    }
+  }
+
+  async function snapAndAnalyze() {
+    if (!isCameraRunning || isAnalyzingFrame) return;
+    isAnalyzingFrame = true;
+
+    const video = document.getElementById('cameraFeed');
+    const canvas = document.getElementById('cameraCanvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const dataURL = canvas.toDataURL('image/jpeg', 0.85);
+    const base64 = dataURL.split(',')[1];
+
+    // Show preview
+    const capturedFrame = document.getElementById('capturedFrame');
+    capturedFrame.src = dataURL;
+    capturedFrame.style.display = 'block';
+    document.getElementById('noFrameText').style.display = 'none';
+
+    log('📸 Frame captured — sending to Gemini...', 'info');
+    updateSystemStatus('analyzing');
+
+    try {
+      const res = await fetch('/api/detect-camera', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64, mimeType: 'image/jpeg' })
+      });
+      if (!res.ok) throw new Error('Server ' + res.status);
+      const result = await res.json();
+
+      totalScans++;
+      document.getElementById('totalScans').textContent = totalScans;
+      if (result.snakeBite) { detectedCount++; document.getElementById('detectedCount').textContent = detectedCount; }
+      document.getElementById('lastConfidence').textContent = result.confidence + '%';
+
+      showResultPanel(result, true);
+      applyDetectionResult(result);
+      document.getElementById('camLastScan').textContent = 'Last scan: ' + new Date().toLocaleTimeString();
+      log(`Cam scan — ${result.snakeBite ? '⚠️ BITE' : '✅ Safe'} (${result.confidence}%)`, result.snakeBite ? 'error' : 'success');
+      if (result.snakeBite) showToast('⚠️ Snake bite in camera feed!');
+
+    } catch (err) {
+      log('Cam error: ' + err.message, 'error');
+    }
+    isAnalyzingFrame = false;
+  }
+
+  // ── Result Panels ────────────────────────────────────────────────
+  function showResultPanel(data, isCamera) {
+    const isBite = data.snakeBite === true;
+    const ids = isCamera
+      ? { empty: 'camEmptyState', content: 'camResultContent', badge: 'camResultBadge', conf: 'camResultConf', fill: 'camConfFill', det: 'camResultDetails', rec: 'camResultRec' }
+      : { empty: 'emptyState',    content: 'resultContent',    badge: 'resultBadge',    conf: 'resultConf',    fill: 'confFill',    det: 'resultDetails',    rec: 'resultRec' };
+
+    document.getElementById(ids.empty).style.display = 'none';
+    document.getElementById(ids.content).style.display = 'block';
+    document.getElementById(ids.badge).textContent = isBite ? '⚠ SNAKE BITE' : '✓ SAFE';
+    document.getElementById(ids.badge).className = 'result-badge ' + (isBite ? 'badge-danger' : 'badge-safe');
+    document.getElementById(ids.conf).textContent = `Confidence: ${data.confidence || 0}%`;
+    const fill = document.getElementById(ids.fill);
+    fill.style.width = (data.confidence || 0) + '%';
+    fill.className = 'confidence-fill ' + (isBite ? 'fill-danger' : 'fill-safe');
+    document.getElementById(ids.det).textContent = data.details || 'No details.';
+    document.getElementById(ids.rec).textContent = '💡 ' + (data.recommendation || 'No recommendation.');
+  }
+
+  function applyDetectionResult(data) {
+    const isBite = data.snakeBite === true;
+    const banner = document.getElementById('alertBanner');
+    banner.className = 'alert-banner show ' + (isBite ? 'danger' : 'safe');
+    document.getElementById('bannerIcon').textContent = isBite ? '⚠️' : '✅';
+    document.getElementById('bannerTitle').textContent = isBite ? 'SNAKE BITE DETECTED — SEEK IMMEDIATE MEDICAL ATTENTION' : 'No Snake Bite Detected — Safe';
+    document.getElementById('bannerSub').textContent = data.details || '';
+    document.getElementById('ledRed').classList.toggle('active', isBite);
+    document.getElementById('ledGreen').classList.toggle('active', !isBite);
+    document.getElementById('buzzerIcon').classList.toggle('active', isBite);
+    document.getElementById('ledStatus').textContent = isBite ? '🔴 RED LED blinking + Buzzer ON (Alert!)' : '🟢 GREEN LED ON — System Clear';
+    updateSystemStatus(isBite ? 'alert' : 'safe');
+  }
+
+  function updateSystemStatus(state) {
+    const dot = document.getElementById('systemDot');
+    const txt = document.getElementById('systemStatusText');
+    dot.className = 'status-dot';
+    if (state === 'alert')      { dot.classList.add('alert');     txt.textContent = 'ALERT — Bite Detected'; }
+    else if (state === 'safe')  { dot.classList.add('connected'); txt.textContent = 'System Clear'; }
+    else if (state === 'analyzing') { txt.textContent = 'Analyzing...'; }
+    else { txt.textContent = 'System Idle'; }
+  }
+
+  function clearImage() {
+    selectedFile = null; fileInput.value = '';
+    previewImg.style.display = 'none'; analyzeBtn.disabled = true;
+    log('Image cleared', 'info');
+  }
+
+  async function resetSystem() {
+    await fetch('/api/reset', { method: 'POST' });
+    document.getElementById('alertBanner').classList.remove('show');
+    ['emptyState','camEmptyState'].forEach(id => document.getElementById(id).style.display = 'flex');
+    ['resultContent','camResultContent'].forEach(id => document.getElementById(id).style.display = 'none');
+    document.getElementById('ledRed').classList.remove('active');
+    document.getElementById('ledGreen').classList.remove('active');
+    document.getElementById('buzzerIcon').classList.remove('active');
+    document.getElementById('ledStatus').textContent = 'Awaiting detection...';
+    document.getElementById('lastConfidence').textContent = '—';
+    updateSystemStatus('idle');
+    log('System reset', 'warn');
+    showToast('System reset complete');
+  }
+
+  function log(msg, type = 'info') {
+    const area = document.getElementById('logArea');
+    const now = new Date();
+    const t = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = `<span class="log-time">[${t}] </span><span class="log-${type}">${msg}</span>`;
+    area.appendChild(entry);
+    area.scrollTop = area.scrollHeight;
+  }
+
+  function clearLog() { document.getElementById('logArea').innerHTML = ''; log('Log cleared', 'info'); }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3500);
+  }
+</script>
+</body>
+</html>
